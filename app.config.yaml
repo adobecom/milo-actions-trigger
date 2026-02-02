@@ -1,0 +1,30 @@
+application:
+  actions: actions
+  runtimeManifest:
+    packages:
+      milo-github-triggers:
+        license: Apache-2.0
+        inputs:
+          githubAppClientId: ${GITHUB_APP_CLIENT_ID}
+          githubAppClientSecret: ${GITHUB_APP_CLIENT_SECRET}
+          githubEvents: ${GITHUB_EVENTS}
+          LOG_LEVEL: debug
+        actions:
+          __trigger-preview-indexer:
+            function: actions/trigger-preview-indexer/index.js
+            runtime: nodejs:22
+            limits:
+              timeout: 720000
+            annotations:
+              final: true
+
+        triggers:
+          previewIndexerTrigger:
+            feed: /whisk.system/alarms/interval
+            inputs:
+              minutes: 15
+
+        rules:
+          previewIndexerTriggerRule:
+            trigger: previewIndexerTrigger
+            action: __trigger-preview-indexer
