@@ -26,7 +26,7 @@ const actionHelper = async (params, actionMain, loggerName = 'main') => {
     const response = responseHelper(request);
     const axiosWithRetry = createAxiosWithRetry(logger);    ;
     const github = githubHelper(axiosWithRetry, logger);
-    github.init(actionParams.githubAppClientId, actionParams.githubAppClientSecret);
+    github.init(actionParams.githubAppClientId, actionParams.githubAppClientSecret.replaceAll(/\\n/g, '\n'));
 
     if (request.isCorsPreflight()) {
         return response.corsResponse();
