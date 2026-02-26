@@ -71,12 +71,7 @@ const githubHelper = (axiosWithRetry, logger) => {
     return token;
   }
 
-  self.dispatchWorkflow = async (eventTypes, repo) => {
-    if (!eventTypes || eventTypes.length === 0) {
-      throwError('Event types are required', 400);
-    }
-
-    // Generate JWT token
+  const getGitHubToken = async () => {
     const jwtToken = generateGitHubAppJWT(clientId, clientSecret);
     logger.info(`JWT token created: ${jwtToken.length}`);
 
@@ -89,6 +84,16 @@ const githubHelper = (axiosWithRetry, logger) => {
     if (!token) {
       throwError('Could not generate access token', 500);
     }
+
+    return token;
+  }
+
+  self.dispatchWorkflow = async (eventTypes, repo) => {
+    if (!eventTypes || eventTypes.length === 0) {
+      throwError('Event types are required', 400);
+    }
+
+    const token = await getGitHubToken();
 
     const githubRequestIds = [];
     await Promise.all(eventTypes.map(async (eventType) => {
@@ -116,6 +121,34 @@ const githubHelper = (axiosWithRetry, logger) => {
 
     return { githubRequestIds };
   }
+
+  self.getRepositoryDispatchRuns = async (repo, eventType, perPage = 100) => {
+    if (!repo) {
+      throwError('Repository is required', 400);
+    }
+
+    const token = await getGitHubToken();
+    const workflowRunsResp = await axiosWithRetry.get(
+      `https://api.github.com/repos/${repo}/actions/runs`,
+      {
+        params: {
+          event: 'repository_dispatch',
+          display_title: eventType,
+          per_page: perPage,
+        },
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github+json',
+        },
+      },
+    );
+
+    if (!isSuccessful(workflowRunsResp.status)) {
+      throwError(`GitHub API returned status ${workflowRunsResp.status}`, 500);
+    }
+
+    return workflowRunsResp.data?.workflow_runs || [];
+  };
 
   return self;
 }

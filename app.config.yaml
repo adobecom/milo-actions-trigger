@@ -8,6 +8,9 @@ application:
           githubAppClientId: ${GITHUB_APP_CLIENT_ID}
           githubAppClientSecret: ${GITHUB_APP_CLIENT_SECRET}
           githubEvents: ${GITHUB_EVENTS}
+          allowedNamespaces: ${ALLOWED_NAMESPACES}
+          warningThresholdMinutes: ${WARNING_THRESHOLD_MINUTES}
+          errorThresholdMinutes: ${ERROR_THRESHOLD_MINUTES}
           LOG_LEVEL: debug
         actions:
           __trigger-preview-indexer:
@@ -17,6 +20,19 @@ application:
               timeout: 720000
             annotations:
               final: true
+          __health-check:
+            function: actions/health-check/index.js
+            runtime: nodejs:22
+            annotations:
+              final: true
+
+        sequences:
+          health-check:
+            actions: '__health-check'
+            web-export: raw
+            web: raw
+            annotations:
+              web-custom-options: true
 
         triggers:
           previewIndexerTrigger:

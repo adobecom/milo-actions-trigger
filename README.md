@@ -15,6 +15,20 @@ Since this project acts as a trigger for scheduled jobs from within Github, you 
 
 The `GITHUB_EVENTS` environment variable defines which event(s) in Github will trigger the indexer workflow. It is configured via the `.env` file. Be sure that it is set correctly to control when the trigger fires. Only indexers relevant to the defined event(s) will be invoked.
 
+## Health Check Action
+
+The `__health-check-github-events` action validates `repository_dispatch` workflow activity for the configured repo (`adobecom/milo` by default):
+
+- `ok`: at least one run is currently active (`queued`/`in_progress`/`waiting`/`requested`/`pending`) or the latest run happened within 60 minutes.
+- `warning`: no active run and latest run is older than 60 minutes but not older than 120 minutes.
+- `error`: no runs found, or latest run is older than 120 minutes.
+
+Optional action params:
+
+- `githubRepo` (default: `adobecom/milo`)
+- `warningThresholdMinutes` (default: `60`)
+- `errorThresholdMinutes` (default: `120`)
+
 ## Schedule & Logic Summary
 
 The Milo Github Actions Trigger is scheduled to run on a predetermined interval (such as every few minutes, as defined in Adobe I/O's schedule settings). On invocation, it assesses the latest event types specified in `GITHUB_EVENTS` and determines if an indexing workflow needs to be kicked off for the Milo project repositories. The logic ensures that only one instance processes events at a time (by design and via precautions mentioned above), dispatches to the correct indexer, and does not re-trigger unless a new relevant event has occurred. This reliable orchestration is key for maintaining consistent and timely Github-triggered automation for Milo.
