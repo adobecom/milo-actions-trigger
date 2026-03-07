@@ -24,7 +24,7 @@ const actionHelper = async (params, actionMain, loggerName = 'main') => {
     const logger = AioLogger(loggerName, { level: logLevel });
     const request = requestHelper(actionParams, queryParams, originalMethod, headers, rawBody);
     const response = responseHelper(request);
-    const axiosWithRetry = createAxiosWithRetry(logger);    ;
+    const axiosWithRetry = createAxiosWithRetry(logger);;
     const github = githubHelper(axiosWithRetry, logger);
     github.init(actionParams.githubAppClientId, actionParams.githubAppClientSecret.replaceAll(/\\n/g, '\n'));
 
@@ -56,11 +56,18 @@ const actionHelper = async (params, actionMain, loggerName = 'main') => {
                 return shouldRetry;
             },
         });
-        
+
         return axiosWithRetry;
     }
 
     try {
+        const checkKeys = request.getActionParams('checkKeys')?.split(',') || [];
+        if (checkKeys?.length) {
+            const authKey = request.getHeaderByName('auth-key');
+            if (!authKey || !checkKeys.includes(authKey)) {
+                return response.errorResponse('Unauthorized', 401);
+            }
+        }
         return await actionMain({
             request,
             response,

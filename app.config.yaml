@@ -8,9 +8,11 @@ application:
           githubAppClientId: ${GITHUB_APP_CLIENT_ID}
           githubAppClientSecret: ${GITHUB_APP_CLIENT_SECRET}
           githubEvents: ${GITHUB_EVENTS}
+          ghWorkflowFilenames: ${GH_WORKFLOW_FILENAMES}
           allowedNamespaces: ${ALLOWED_NAMESPACES}
           warningThresholdMinutes: ${WARNING_THRESHOLD_MINUTES}
           errorThresholdMinutes: ${ERROR_THRESHOLD_MINUTES}
+          consecutiveFailedRuns: ${CONSECUTIVE_FAILED_RUNS}
           LOG_LEVEL: debug
         actions:
           __trigger-preview-indexer:
@@ -21,6 +23,8 @@ application:
             annotations:
               final: true
           __health-check:
+            inputs:
+              checkKeysX: ${HEALTH_CHECK_KEYS}
             function: actions/health-check/index.js
             runtime: nodejs:22
             annotations:

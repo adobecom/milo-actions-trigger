@@ -1,107 +1,83 @@
 import actionHelper from '../internal/action.js';
 
-const RUNNING_STATUSES = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
 const DEFAULT_WARNING_THRESHOLD_MINUTES = 60;
 const DEFAULT_ERROR_THRESHOLD_MINUTES = 120;
 const DEFAULT_REPO = 'adobecom/milo';
-const MAX_CONSECUTIVE_FAILED_RUNS = 10;
+const DEFAULT_CONSECUTIVE_FAILED_RUNS = 10;
 
-const getPositiveInteger = (value, fallbackValue) => {
+const getPositiveInteger = (request, key, fallbackValue) => {
+  const value = request.getActionParams(key);
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) || parsed <= 0 ? fallbackValue : parsed;
 };
 
-const toEventTypes = (eventTypesCsv) => eventTypesCsv
+const toWorkflowFn = (eventTypesCsv) => eventTypesCsv
   ?.split(',')
   ?.map((eventType) => eventType.trim())
   ?.filter(Boolean) || [];
 
 const isFailedRun = (run) => run?.conclusion === 'failure';
 
-const isRunInMinutesWindow = (run, thresholdMinutes) => {
-  const candidateTimestamp = run?.run_started_at || run?.created_at || run?.updated_at;
-  if (!candidateTimestamp) {
-    return false;
-  }
-
-  const runMs = Date.parse(candidateTimestamp);
-  if (Number.isNaN(runMs)) {
-    return false;
-  }
-
-  const thresholdMs = thresholdMinutes * 60 * 1000;
-  return (Date.now() - runMs) <= thresholdMs;
-};
-
-const countConsecutiveFailedRuns = (runs = []) => {
-  let failedRuns = 0;
+const countConsecutiveFailures = (runs) => {
+  let consecutiveFailures = 0;
   for (const run of runs) {
-    if (isFailedRun(run)) {
-      failedRuns += 1;
-      continue;
+    if (!isFailedRun(run)) {
+      break;
     }
-    break;
+    consecutiveFailures += 1;
   }
-  return failedRuns;
-};
-
-const buildEventStatus = (eventType, runs, errorThresholdMinutes) => {
-  const isRunning = runs.some((run) => RUNNING_STATUSES.has(run?.status));
-  const consecutiveFailedRuns = countConsecutiveFailedRuns(runs);
-  const hasRecentRun = runs.some((run) => isRunInMinutesWindow(run, errorThresholdMinutes));
-
-  const checks = {
-    isRunning,
-    hasNoMoreThanTenConsecutiveFailedRuns: consecutiveFailedRuns <= MAX_CONSECUTIVE_FAILED_RUNS,
-    hasRecentRun,
-  };
-
-  return {
-    eventType,
-    checks,
-    consecutiveFailedRuns,
-    runCount: runs.length,
-    status: Object.values(checks).every(Boolean) ? 'pass' : 'failed',
-  };
+  return consecutiveFailures;
 };
 
 const actionMain = async (actionTools) => {
   const { request, response, runtime: { github } } = actionTools;
-  const githubEvents = toEventTypes(request.getActionParams('githubEvents'));
+  const needDetails = !!request.getQueryParameter('details', '')
+  const ghWorkflowFns = toWorkflowFn(request.getActionParams('ghWorkflowFilenames'));
+  if (ghWorkflowFns.length === 0) {
+    return response.successResponse({ status: 'pass' });
+  }
   const repo = request.getActionParams('githubRepo') || DEFAULT_REPO;
-  const warningThresholdMinutes = getPositiveInteger(
-    request.getActionParams('warningThresholdMinutes'),
-    DEFAULT_WARNING_THRESHOLD_MINUTES,
-  );
-  const errorThresholdMinutes = getPositiveInteger(
-    request.getActionParams('errorThresholdMinutes'),
-    DEFAULT_ERROR_THRESHOLD_MINUTES,
+  const warningThresholdMinutes = getPositiveInteger(request, 'warningThresholdMinutes', DEFAULT_WARNING_THRESHOLD_MINUTES);
+  const errorThresholdMinutes = getPositiveInteger(request, 'errorThresholdMinutes', DEFAULT_ERROR_THRESHOLD_MINUTES);
+  const consecutiveFailedRuns = getPositiveInteger(request, 'consecutiveFailedRuns', DEFAULT_CONSECUTIVE_FAILED_RUNS);
+
+  const eventRunsResults = await Promise.all(
+    ghWorkflowFns.map(async (workflowFn) => {
+      const runs = await github.getRepositoryDispatchRuns(repo, workflowFn);
+      const eventConsecutiveFailures = countConsecutiveFailures(runs);
+      const consecutiveFailureStatus = eventConsecutiveFailures >= consecutiveFailedRuns ? 'fail' : 'pass';
+      const lastRunAt = runs?.[0]?.started_at_ms || new Date(0).getTime();
+      const currentDate = Date.now();
+      let lastRunStatus = 'pass';
+      if (lastRunAt < currentDate - errorThresholdMinutes * 60 * 1000) {
+        lastRunStatus = 'fail';
+      } else if (lastRunAt < currentDate - warningThresholdMinutes * 60 * 1000) {
+        lastRunStatus = 'warn';
+      }
+      return [workflowFn, { runs, consecutiveFailureStatus, lastRunStatus, lastRunAt, eventConsecutiveFailures }];
+    })
   );
 
-  if (githubEvents.length === 0) {
-    return response.successResponse({
-      status: 'pass',
-      details: {}
-    });
+  const eventRunDetails = Object.fromEntries(eventRunsResults);
+
+  const getOverallStatus = (data) => {
+    const statuses = Object.values(data).flatMap(w => [
+      w.consecutiveFailureStatus || 'warn',
+      w.lastRunStatus || 'warn'
+    ]);
+
+    if (statuses.includes("fail")) return "fail";
+    if (statuses.includes("warn")) return "warn";
+    return "pass";
+  };
+
+  const finalResponse = {};
+  finalResponse.status = getOverallStatus(eventRunDetails);
+  if (needDetails) {
+    finalResponse.eventRunDetails = eventRunDetails;
   }
 
-  const workflowRunsArrays = await Promise.all(
-    githubEvents.map((eventType) => github.getRepositoryDispatchRuns(repo, eventType))
-  );
-
-  const eventStatuses = githubEvents.map((eventType, index) => (
-    buildEventStatus(eventType, workflowRunsArrays[index] || [], errorThresholdMinutes)
-  ));
-
-  const overallStatus = eventStatuses.every((eventStatus) => eventStatus.status === 'pass') ? 'pass' : 'failed';
-
-  return response.successResponse({
-    status: overallStatus,
-    events: eventStatuses,
-    errorThresholdMinutes,
-    warningThresholdMinutes,
-    repo,
-  });
+  return response.successResponse(finalResponse);
 };
 
 const main = (async (params) => actionHelper(params, actionMain));

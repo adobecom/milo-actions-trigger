@@ -27,10 +27,13 @@ const requestHelper = (actionParams, queryParams, originalMethod, headers) => {
 
     const getActionParams = (key) => key ? actionParams[key] : actionParams;
 
+    const getQueryParameter = (key, value) => getParsedQueryParameters()[key] || value;
+
     return {
         getMethod,
         getQueryString,
         getParsedQueryParameters,
+        getQueryParameter,
         getRequestCorsHeaders,
         isCorsPreflight,
         getHeaderByName,

@@ -15,7 +15,7 @@ const githubHelper = (axiosWithRetry, logger) => {
   let clientSecret;
 
   const self = {};
- 
+
   self.init = (cid, cs) => {
     if (!cid || !cs) {
       throwError('Client ID and Client Secret are required', 400);
@@ -24,7 +24,7 @@ const githubHelper = (axiosWithRetry, logger) => {
     clientSecret = cs;
   }
 
-  const generateGitHubAppJWT = () => {  
+  const generateGitHubAppJWT = () => {
     const payload = {
       iat: Math.floor(Date.now() / 1000) - 60,
       exp: Math.floor(Date.now() / 1000) + 600,
@@ -99,7 +99,7 @@ const githubHelper = (axiosWithRetry, logger) => {
     await Promise.all(eventTypes.map(async (eventType) => {
       const workflowDispatchResp = await axiosWithRetry.post(
         `https://api.github.com/repos/${repo}/dispatches`,
-        { 
+        {
           event_type: eventType
         },
         {
@@ -122,18 +122,18 @@ const githubHelper = (axiosWithRetry, logger) => {
     return { githubRequestIds };
   }
 
-  self.getRepositoryDispatchRuns = async (repo, eventType, perPage = 100) => {
+  self.getRepositoryDispatchRuns = async (repo, workflowFn, perPage = 100) => {
     if (!repo) {
       throwError('Repository is required', 400);
     }
 
     const token = await getGitHubToken();
+
     const workflowRunsResp = await axiosWithRetry.get(
-      `https://api.github.com/repos/${repo}/actions/runs`,
+      `https://api.github.com/repos/${repo}/actions/workflows/${workflowFn}/runs`,
       {
         params: {
           event: 'repository_dispatch',
-          display_title: eventType,
           per_page: perPage,
         },
         headers: {
@@ -147,7 +147,18 @@ const githubHelper = (axiosWithRetry, logger) => {
       throwError(`GitHub API returned status ${workflowRunsResp.status}`, 500);
     }
 
-    return workflowRunsResp.data?.workflow_runs || [];
+    const workflowRuns = workflowRunsResp.data?.workflow_runs || [];
+
+    return workflowRuns
+      .map(wr => ({
+        id: wr.id,
+        name: wr.name,
+        status: wr.status,
+        conclusion: wr.conclusion,
+        display_title: wr.display_title,
+        started_at_ms: new Date(wr.run_started_at || 0).getTime(),
+      }))
+      .sort((a, b) => b.started_at_ms - a.started_at_ms);
   };
 
   return self;
