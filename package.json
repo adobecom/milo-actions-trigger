@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@adobe/aio-lib-core-logging": "^3.0.2",
     "axios": "^1.20.0",
     "axios-retry": "^4.5.0",
     "jsonwebtoken": "^9.0.3"
