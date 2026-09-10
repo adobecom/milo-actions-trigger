@@ -22,6 +22,6 @@
     "lint:fix": "npm run lint -- --fix"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }
